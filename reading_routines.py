@@ -275,7 +275,7 @@ def read_acol_xdr():
 # ==============================================================================
 def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
                    list_sig_vsin_obs, list_pre_ebmv, lbd_range,
-                   listpar, Nsigma_dis, include_rv, model):
+                   listpar, Nsigma_plx, include_rv, model):
 
         print(75 * '=')
 
@@ -288,16 +288,14 @@ def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
         #                'sigma_parallax': list_sig_plx,
         #                'folder_ines': star_r + '/'}
 
-        plx = np.copy(list_plx)
-        dplx = np.copy(list_sig_plx)
+        plx_obs = np.copy(list_plx)
+        sig_plx_obs = np.copy(list_sig_plx)
         vsin_obs = np.copy(list_vsini_obs)
 
         band = np.copy(lbd_range)
 
 # ------------------------------------------------------------------------------
         # Reading known stellar parameters
-        dist_pc = 1e3 / plx  # pc
-        sig_dist_pc = (1e3 * dplx / plx**2)
         sig_vsin_obs = np.copy(list_sig_vsin_obs)
 
 # ------------------------------------------------------------------------------
@@ -310,13 +308,13 @@ def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
 
 # ------------------------------------------------------------------------------
         # To add new parameters
-        dist_min = dist_pc - Nsigma_dis * sig_dist_pc
-        dist_max = dist_pc + Nsigma_dis * sig_dist_pc
+        plx_min = plx_obs - Nsigma_plx * sig_plx_obs
+        plx_max = plx_obs + Nsigma_plx * sig_plx_obs
 
-        if dist_min < 0:
-            dist_min = 1
+        if plx_min < 0:
+            plx_min = 1e-3
 
-        addlistpar = [ebmv, [dist_min, dist_max], rv]
+        addlistpar = [ebmv, [plx_min, plx_max], rv]
 
         addlistpar = list(filter(partial(is_not, None), addlistpar))
 
@@ -325,7 +323,7 @@ def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
                                [listpar[1][0], listpar[1][-1]],
                                [listpar[2][0], listpar[2][-1]],
                                [listpar[3][0], listpar[3][-1]],
-                               [dist_min, dist_max],
+                               [plx_min, plx_max],
                                [ebmv[0], ebmv[-1]]])
         if model == 'aara':
             ranges = np.array([[listpar[0][0], listpar[0][-1]],
@@ -335,7 +333,7 @@ def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
                                [listpar[4][0], listpar[4][-1]],
                                [listpar[5][0], listpar[5][-1]],
                                [listpar[6][0], listpar[6][-1]],
-                               [dist_min, dist_max],
+                               [plx_min, plx_max],
                                [ebmv[0], ebmv[-1]]])
         if model == 'beatlas':
             ranges = np.array([[listpar[0][0], listpar[0][-1]],
@@ -343,7 +341,7 @@ def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
                                [listpar[2][0], listpar[2][-1]],
                                [listpar[3][0], listpar[3][-1]],
                                [listpar[4][0], listpar[4][-1]],
-                               [dist_min, dist_max],
+                               [plx_min, plx_max],
                                [ebmv[0], ebmv[-1]]])
 
         if model == 'acol' or model == 'bcmi':
@@ -354,7 +352,7 @@ def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
                                [listpar[4][0], listpar[4][-1]],
                                [listpar[5][0], listpar[5][-1]],
                                [listpar[6][0], listpar[6][-1]],
-                               [dist_min, dist_max],
+                               [plx_min, plx_max],
                                [ebmv[0], ebmv[-1]]])
 
         # print(ranges)
@@ -363,12 +361,12 @@ def read_star_info(stars, list_plx, list_sig_plx, list_vsini_obs,
         #                        [listpar[1][0], listpar[1][-1]],
         #                        [listpar[2][0], listpar[2][-1]],
         #                        [listpar[3][0], listpar[3][-1]],
-        #                        [dist_min, dist_max],
+        #                        [plx_min, plx_max],
         #                        [ebmv[0], ebmv[-1]],
         #                        [rv[0], rv[-1]]])
         Ndim = len(ranges)
 
-        return ranges, dist_pc, sig_dist_pc, vsin_obs,\
+        return ranges, plx_obs, sig_plx_obs, vsin_obs,\
             sig_vsin_obs, Ndim, band
 
 

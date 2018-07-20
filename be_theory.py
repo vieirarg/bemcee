@@ -5,37 +5,6 @@ from utils import find_nearest
 
 
 # ==============================================================================
-def oblat2w(oblat):
-    '''
-    Author: Rodrigo Vieira
-    Converts oblateness into wc=Omega/Omega_crit
-    Ekstrom et al. 2008, Eq. 9
-
-    Usage:
-    w = oblat2w(oblat)
-    '''
-    if (np.min(oblat) < 1.) or (np.max(oblat) > 1.5):
-        print('Warning: values out of allowed range')
-
-    oblat = np.array([oblat]).reshape((-1))
-    nw = len(oblat)
-    w = np.zeros(nw)
-
-    for iw in range(nw):
-        if oblat[iw] <= 1.:
-            w[iw] = 0.
-        elif oblat[iw] >= 1.5:
-            w[iw] = 1.
-        else:
-            w[iw] = (1.5**1.5) * np.sqrt(2. * (oblat[iw] - 1.) / oblat[iw]**3.)
-
-    if nw == 1:
-        w = w[0]
-
-    return w
-
-
-# ==============================================================================
 def obl2W(oblat):
 
     W = np.sqrt(2 * (oblat - 1))
@@ -115,36 +84,3 @@ def t_tms_from_Xc(M, savefig=None, plot_fig=None, ttms_true=None, Xc=None):
         plt.savefig(pdfname)
 
     return k, arr_t_tc, arr_Xc
-
-
-# ==============================================================================
-def hfrac2tms(Hfrac, inverse=False):
-    '''
-    Converts nuclear hydrogen fraction into fractional time in
-    the main-sequence, (and vice-versa) based on the polynomial
-    fit of the average of this relation for all B spectral types
-    and rotational velocities.
-
-    Usage:
-    t = hfrac2tms(Hfrac, inverse=False)
-    or
-    Hfrac = hfrac2tms(t, inverse=True)
-    '''
-    if not inverse:
-        coef = np.array([-0.57245754, -0.8041484,
-                         -0.51897195, 1.00130795])
-        tms = coef.dot(np.array([Hfrac**3, Hfrac**2, Hfrac**1, Hfrac**0]))
-    else:
-        # interchanged parameter names
-        coef = np.array([-0.74740597, 0.98208541, -0.64318363,
-                         -0.29771094, 0.71507214])
-        tms = coef.dot(np.array([Hfrac**4, Hfrac**3, Hfrac**2,
-                                 Hfrac**1, Hfrac**0]))
-
-    # solving problem at lower extreme
-    if tms < 0.:
-        tms = 0.
-
-    return tms
-
-

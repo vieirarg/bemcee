@@ -1,8 +1,8 @@
 from PyAstronomy import pyasl
 import numpy as np
 import matplotlib.pylab as plt
-from be_theory import hfrac2tms
-from utils import geneva_interp_fast, griddataBA, griddataBAtlas
+from pyhdust.beatlas import griddataBA
+from pyhdust.rotstars import geneva_interp_fast, hfrac2tms
 
 
 # ==============================================================================
@@ -44,36 +44,33 @@ def plot_fit(par, lbd, logF, dlogF, minfo, listpar, lbdarr, logF_grid,
     Usage:
     plot_fit(par, lbd, logF, dlogF, minfo, logF_grid, isig, Nwalk, Nmcmc)
     where
-    par = np.array([Mstar, oblat, Sig0, Rd, n, cosi, dist])
+    par = np.array([Mstar, oblat, Sig0, Rd, n, cosi, plx])
     '''
     # model parameters
     if include_rv is True:
-        Mstar, oblat, Hfrac, cosi, dist, ebv, rv = par
+        Mstar, oblat, Hfrac, cosi, plx, ebv, rv = par
         lim = 3
         lim2 = 2
     else:
-        Mstar, oblat, Hfrac, cosi, dist, ebv = par
+        Mstar, oblat, Hfrac, cosi, plx, ebv = par
         lim = 2
         lim2 = 1
         rv = 3.1
 
-    # Rpole, Lstar, Teff = vkg.geneve_par(Mstar, oblat, Hfrac, folder_tables)
-    # t = np.max(np.array([hfrac2tms(hfrac), 0.]))
-    t = np.max(np.array([hfrac2tms(Hfrac), 0.]))
-    Rpole, logL = geneva_interp_fast(Mstar, oblat, t,
-                                     neighbours_only=True, isRpole=False)
+    t = hfrac2tms(Hfrac)
+    Rpole, logL, _ = geneva_interp_fast(Mstar, oblat, t)
+    dist = 1e3 / plx
     norma = (10. / dist)**2  # (Lstar*Lsun) / (4. * pi * (dist*pc)**2)
     uplim = dlogF == 0
     keep = np.logical_not(uplim)
     # chain = np.load(npy)
 
     # interpolate models
-    logF_mod = griddataBA(minfo, logF_grid, par[:-lim], listpar, dims)
+    logF_mod = griddataBA(minfo, logF_grid, par[:-lim], isig)
     logF_list = np.zeros([len(par_list), len(logF_mod)])
     chi2 = np.zeros(len(logF_list))
     for i in range(len(par_list)):
-        logF_list[i] = griddataBA(minfo, logF_grid, par_list[i, :-lim],
-                                  listpar, dims)
+        logF_list[i] = griddataBA(minfo, logF_grid, par_list[i, :-lim], isig)
     # convert to physical units
     logF_mod += np.log10(norma)
     logF_list += np.log10(norma)
@@ -146,31 +143,29 @@ def plot_fit_last(par, lbd, logF, dlogF, minfo, listpar, lbdarr, logF_grid,
     Usage:
     plot_fit(par, lbd, logF, dlogF, minfo, logF_grid, isig, Nwalk, Nmcmc)
     where
-    par = np.array([Mstar, oblat, Sig0, Rd, n, cosi, dist])
+    par = np.array([Mstar, oblat, Sig0, Rd, n, cosi, plx])
     '''
     # model parameters
     if include_rv is True:
-        Mstar, oblat, Hfrac, cosi, dist, ebv, rv = par
+        Mstar, oblat, Hfrac, cosi, plx, ebv, rv = par
         lim = 3
         lim2 = 2
     else:
         if model == 'befavor':
-            Mstar, oblat, Hfrac, cosi, dist, ebv = par
+            Mstar, oblat, Hfrac, cosi, plx, ebv = par
         if model == 'aara' or model == 'acol' or model == 'bcmi':
-            Mstar, oblat, Hfrac, Sig0, Rd, n, cosi, dist, ebv = par
+            Mstar, oblat, Hfrac, Sig0, Rd, n, cosi, plx, ebv = par
         if model == 'beatlas':
-            Mstar, oblat, Sig0, n, cosi, dist, ebv = par
+            Mstar, oblat, Sig0, n, cosi, plx, ebv = par
             Hfrac = 0.30
 
         lim = 2
         lim2 = 1
         rv = 3.1
 
-    # Rpole, Lstar, Teff = vkg.geneve_par(Mstar, oblat, Hfrac, folder_tables)
-    # t = np.max(np.array([hfrac2tms(hfrac), 0.]))
-    t = np.max(np.array([hfrac2tms(Hfrac), 0.]))
-    Rpole, logL = geneva_interp_fast(Mstar, oblat, t,
-                                     neighbours_only=True, isRpole=False)
+    t = hfrac2tms(Hfrac)
+    Rpole, logL, _ = geneva_interp_fast(Mstar, oblat, t)
+    dist = 1e3 / plx
     norma = (10. / dist)**2  # (Lstar*Lsun) / (4. * pi * (dist*pc)**2)
     uplim = dlogF == 0
     keep = np.logical_not(uplim)
@@ -181,21 +176,17 @@ def plot_fit_last(par, lbd, logF, dlogF, minfo, listpar, lbdarr, logF_grid,
 
     # interpolate model
     if model == 'beatlas':
-        logF_mod = griddataBAtlas(minfo, logF_grid, par[:-lim],
-                                  listpar, dims, isig)
+        logF_mod = griddataBAtlas(minfo, logF_grid, par[:-lim], isig)
     else:
-        logF_mod = griddataBA(minfo, logF_grid, par[:-lim],
-                              listpar, dims)
+        logF_mod = griddataBA(minfo, logF_grid, par[:-lim], isig)
 
     logF_list = np.zeros([len(par_list), len(logF_mod)])
     chi2 = np.zeros(len(logF_list))
     for i in range(len(par_list)):
         if model == 'beatlas':
-            logF_list[i] = griddataBAtlas(minfo, logF_grid, par_list[i, :-lim],
-                                          listpar, dims, isig)
+            logF_list[i] = griddataBAtlas(minfo, logF_grid, par_list[i, :-lim], isig)
         else:
-            logF_list[i] = griddataBA(minfo, logF_grid, par_list[i, :-lim],
-                                      listpar, dims)
+            logF_list[i] = griddataBA(minfo, logF_grid, par_list[i, :-lim], isig)
 
     # convert to physical units
     logF_mod += np.log10(norma)
@@ -271,31 +262,29 @@ def plot_residuals(par, lbd, logF, dlogF, minfo, listpar, lbdarr, logF_grid,
     Usage:
     plot_fit(par, lbd, logF, dlogF, minfo, logF_grid, isig, Nwalk, Nmcmc)
     where
-    par = np.array([Mstar, oblat, Sig0, Rd, n, cosi, dist])
+    par = np.array([Mstar, oblat, Sig0, Rd, n, cosi, plx])
     '''
     # model parameters
     if include_rv is True:
-        Mstar, oblat, Hfrac, cosi, dist, ebv, rv = par
+        Mstar, oblat, Hfrac, cosi, plx, ebv, rv = par
         lim = 3
         lim2 = 2
     else:
         if model == 'befavor':
-            Mstar, oblat, Hfrac, cosi, dist, ebv = par
+            Mstar, oblat, Hfrac, cosi, plx, ebv = par
         if model == 'aara' or model == 'acol' or model == 'bcmi':
-            Mstar, oblat, Hfrac, Sig0, Rd, n, cosi, dist, ebv = par
+            Mstar, oblat, Hfrac, Sig0, Rd, n, cosi, plx, ebv = par
         if model == 'beatlas':
-            Mstar, oblat, Sig0, n, cosi, dist, ebv = par
+            Mstar, oblat, Sig0, n, cosi, plx, ebv = par
             Hfrac = 0.3
 
         lim = 2
         lim2 = 1
         rv = 3.1
 
-    # Rpole, Lstar, Teff = vkg.geneve_par(Mstar, oblat, Hfrac, folder_tables)
-    # t = np.max(np.array([hfrac2tms(hfrac), 0.]))
-    t = np.max(np.array([hfrac2tms(Hfrac), 0.]))
-    Rpole, logL = geneva_interp_fast(Mstar, oblat, t,
-                                     neighbours_only=True, isRpole=False)
+    t = hfrac2tms(Hfrac)
+    Rpole, logL, _ = geneva_interp_fast(Mstar, oblat, t)
+    dist = 1e3 / plx
     norma = (10. / dist)**2  # (Lstar*Lsun) / (4. * pi * (dist*pc)**2)
     uplim = dlogF == 0
     keep = np.logical_not(uplim)
@@ -306,21 +295,17 @@ def plot_residuals(par, lbd, logF, dlogF, minfo, listpar, lbdarr, logF_grid,
 
     # interpolate models
     if model == 'beatlas':
-        logF_mod = griddataBAtlas(minfo, logF_grid, par[:-lim],
-                                  listpar, dims, isig)
+        logF_mod = griddataBAtlas(minfo, logF_grid, par[:-lim], isig)
     else:
-        logF_mod = griddataBA(minfo, logF_grid, par[:-lim],
-                              listpar, dims)
+        logF_mod = griddataBA(minfo, logF_grid, par[:-lim], isig)
 
     logF_list = np.zeros([len(par_list), len(logF_mod)])
     chi2 = np.zeros(len(logF_list))
     for i in range(len(par_list)):
         if model == 'beatlas':
-            logF_list[i] = griddataBAtlas(minfo, logF_grid, par_list[i, :-lim],
-                                          listpar, dims, isig)
+            logF_list[i] = griddataBAtlas(minfo, logF_grid, par_list[i, :-lim], isig)
         else:
-            logF_list[i] = griddataBA(minfo, logF_grid, par_list[i, :-lim],
-                                      listpar, dims)
+            logF_list[i] = griddataBA(minfo, logF_grid, par_list[i, :-lim], isig)
 
     # convert to physical units
     logF_mod += np.log10(norma)

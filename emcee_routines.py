@@ -3,22 +3,26 @@ import time
 import corner_bruno
 from PyAstronomy import pyasl
 import matplotlib.pyplot as plt
-from constants import G, Msun, Rsun
-from be_theory import oblat2w, t_tms_from_Xc, obl2W
+import pyhdust.phc as phc
+from be_theory import t_tms_from_Xc, obl2W
+from pyhdust.beatlas import hfrac2tms, griddataBA
+from pyhdust.rotstars import oblat2w, geneva_interp_fast
 import emcee
 import matplotlib as mpl
 from corner import corner
 from matplotlib import ticker
 from matplotlib import *
 import matplotlib.font_manager as fm
-from utils import geneva_interp_fast, find_nearest, griddataBA,\
-    griddataBAtlas, kde_scipy
-from be_theory import hfrac2tms
+from utils import find_nearest, kde_scipy
 from plot_routines import print_output, par_errors,\
     plot_fit_last, plot_residuals
 from reading_routines import read_iue, read_votable,\
     read_star_info
 from convergence_routines import plot_convergence
+
+G = phc.G.cgs
+Msun = phc.Msun.cgs
+Rsun = phc.Rsun.cgs
 
 font = fm.FontProperties(size=30)
 sfmt = ticker.ScalarFormatter(useMathText=True)
@@ -55,17 +59,17 @@ def lnlike(params, lbd, logF, dlogF, logF_mod, ranges, include_rv, model):
     # p2 = age
     # p3 = inclination
     # p4 = ebmv
-    # p5 = distance
+    # p5 = parallax
     """
 
     if model == 'befavor':
-        dist = params[4]
+        plx = params[4]
         ebmv = params[5]
     if model == 'aara' or model == 'acol' or model == 'bcmi':
-        dist = params[7]
+        plx = params[7]
         ebmv = params[8]
     if model == 'beatlas':
-        dist = params[5]
+        plx = params[5]
         ebmv = params[6]
 
     if include_rv is True:
@@ -73,6 +77,7 @@ def lnlike(params, lbd, logF, dlogF, logF_mod, ranges, include_rv, model):
     else:
         RV = 3.1
 
+    dist = 1e3 / plx
     norma = (10 / dist)**2
     uplim = dlogF == 0
     keep = np.logical_not(uplim)
@@ -85,9 +90,12 @@ def lnlike(params, lbd, logF, dlogF, logF_mod, ranges, include_rv, model):
 
     logF_mod = np.log10(flux_mod)
 
-    # print(logF_mod)
-    chi2 = np.sum(((logF[keep] - logF_mod[keep])**2 / (dlogF[keep])**2.))
-    # chi2 = np.sum((logF - logF_mod)**2 / (dlogF)**2.)
+    if uplim.any():
+        if (logF_mod[uplim] > logF[uplim]).any():
+            chi2 = np.inf
+    else:
+        chi2 = np.sum(((logF[keep] - logF_mod[keep])**2 / (dlogF[keep])**2.))
+        # chi2 = np.sum((logF - logF_mod)**2 / (dlogF)**2.)
 
     if chi2 is np.nan:
         chi2 = np.inf
@@ -96,19 +104,19 @@ def lnlike(params, lbd, logF, dlogF, logF_mod, ranges, include_rv, model):
 
 
 # ==============================================================================
-def lnprior(params, vsin_obs, sig_vsin_obs, dist_pc, sig_dist_pc,
+def lnprior(params, vsin_obs, sig_vsin_obs, plx_obs, sig_plx_obs,
             ranges, model, stellar_prior, npy_star, pdf_mas,
-            pdf_obl, pdf_age, pdf_dis, pdf_ebv, grid_mas,
-            grid_obl, grid_age, grid_dis, grid_ebv):
+            pdf_obl, pdf_age, pdf_plx, pdf_ebv, grid_mas,
+            grid_obl, grid_age, grid_plx, grid_ebv):
 
     if model == 'befavor':
-        Mstar, oblat, Hfrac, cosi, dist, ebv = params[0], params[1],\
+        Mstar, oblat, Hfrac, cosi, plx, ebv = params[0], params[1],\
             params[2], params[3], params[4], params[5]
     if model == 'aara' or model == 'acol' or model == 'bcmi':
-        Mstar, oblat, Hfrac, cosi, dist, ebv = params[0], params[1],\
+        Mstar, oblat, Hfrac, cosi, plx, ebv = params[0], params[1],\
             params[2], params[6], params[7], params[8]
     if model == 'beatlas':
-        Mstar, oblat, Hfrac, cosi, dist, ebv = params[0], params[1],\
+        Mstar, oblat, Hfrac, cosi, plx, ebv = params[0], params[1],\
             0.3, params[4], params[5], params[6]
 
     # Reading Stellar Priors
@@ -116,21 +124,19 @@ def lnprior(params, vsin_obs, sig_vsin_obs, dist_pc, sig_dist_pc,
         temp, idx_mas = find_nearest(grid_mas, value=Mstar)
         temp, idx_obl = find_nearest(grid_obl, value=oblat)
         temp, idx_age = find_nearest(grid_age, value=Hfrac)
-        temp, idx_dis = find_nearest(grid_dis, value=dist)
+        temp, idx_plx = find_nearest(grid_plx, value=plx)
         temp, idx_ebv = find_nearest(grid_ebv, value=ebv)
         chi2_stellar_prior = Mstar * pdf_mas[idx_mas] +\
             oblat * pdf_obl[idx_obl] + \
             Hfrac * pdf_age[idx_age] + \
-            dist * pdf_dis[idx_dis] + \
+            plx * pdf_plx[idx_plx] + \
             ebv * pdf_ebv[idx_ebv]
     else:
         chi2_stellar_prior = 0.0
 
-    # Rpole, Lstar, Teff = vkg.geneve_par(Mstar, oblat, Hfrac, folder_tables)
-    t = np.max(np.array([hfrac2tms(Hfrac), 0.]))
+    t = hfrac2tms(Hfrac)
 
-    Rpole, logL = geneva_interp_fast(Mstar, oblat, t,
-                                     neighbours_only=True, isRpole=False)
+    Rpole, logL, _ = geneva_interp_fast(Mstar, oblat, t)
 
     wcrit = np.sqrt(8. / 27. * G * Mstar * Msun / (Rpole * Rsun)**3)
 
@@ -139,19 +145,19 @@ def lnprior(params, vsin_obs, sig_vsin_obs, dist_pc, sig_dist_pc,
 
     chi2_vsi = (vsin_obs - vsini)**2 / sig_vsin_obs**2.
 
-    chi2_dis = (dist_pc - dist)**2 / sig_dist_pc**2.
+    chi2_plx = (plx_obs - plx)**2 / sig_plx_obs**2.
 
-    chi2_prior = chi2_vsi + chi2_dis + chi2_stellar_prior
+    chi2_prior = chi2_vsi + chi2_plx + chi2_stellar_prior
 
     return -0.5 * chi2_prior
 
 
 # ==============================================================================
 def lnprob(params, lbd, logF, dlogF, minfo, listpar, logF_grid,
-           vsin_obs, sig_vsin_obs, dist_pc, sig_dist_pc, isig,
+           vsin_obs, sig_vsin_obs, plx_obs, sig_plx_obs, isig,
            ranges, dims, include_rv, model, stellar_prior, npy_star,
-           pdf_mas, pdf_obl, pdf_age, pdf_dis, pdf_ebv, grid_mas,
-           grid_obl, grid_age, grid_dis, grid_ebv):
+           pdf_mas, pdf_obl, pdf_age, pdf_plx, pdf_ebv, grid_mas,
+           grid_obl, grid_age, grid_plx, grid_ebv):
 
     count = 0
     inside_ranges = True
@@ -167,19 +173,12 @@ def lnprob(params, lbd, logF, dlogF, minfo, listpar, logF_grid,
             lim = 2
         # print(params[:-lim])
         # print(logF_grid)
-        if model == 'beatlas':
-            # [9.90066097 1.34002053 0.01568269 3.74540388 0.19852969]
+        logF_mod = griddataBA(minfo, logF_grid, params[:-lim], isig, silent=True)
 
-            logF_mod = griddataBAtlas(minfo, logF_grid, params[:-lim],
-                                      listpar, dims, isig)
-        else:
-            logF_mod = griddataBA(minfo, logF_grid, params[:-lim],
-                                  listpar, dims)
-
-        lp = lnprior(params, vsin_obs, sig_vsin_obs, dist_pc,
-                     sig_dist_pc, ranges, model, stellar_prior,
-                     npy_star, pdf_mas, pdf_obl, pdf_age, pdf_dis, pdf_ebv,
-                     grid_mas, grid_obl, grid_age, grid_dis, grid_ebv)
+        lp = lnprior(params, vsin_obs, sig_vsin_obs, plx_obs,
+                     sig_plx_obs, ranges, model, stellar_prior,
+                     npy_star, pdf_mas, pdf_obl, pdf_age, pdf_plx, pdf_ebv,
+                     grid_mas, grid_obl, grid_age, grid_plx, grid_ebv)
 
         lk = lnlike(params, lbd, logF, dlogF, logF_mod, ranges,
                     include_rv, model)
@@ -264,8 +263,8 @@ def run_emcee(p0, sampler, nib, nimc, Ndim, file_name):
 
 # ==============================================================================
 def emcee_inference(star, Ndim, ranges, lbdarr, wave, logF, dlogF, minfo,
-                    listpar, logF_grid, vsin_obs, sig_vsin_obs, dist_pc,
-                    sig_dist_pc, isig, dims, include_rv, a_parameter,
+                    listpar, logF_grid, vsin_obs, sig_vsin_obs, plx_obs,
+                    sig_plx_obs, isig, dims, include_rv, a_parameter,
                     af_filter, tag, plot_fits, long_process, log_scale,
                     model, acrux, pool, Nproc, stellar_prior, npy_star,
                     pdf_mas, pdf_obl, pdf_age, pdf_dis, pdf_ebv,
@@ -288,8 +287,8 @@ def emcee_inference(star, Ndim, ranges, lbdarr, wave, logF, dlogF, minfo,
             sampler = emcee.EnsembleSampler(Nwalk, Ndim, lnprob,
                                             args=[wave, logF, dlogF, minfo,
                                                   listpar, logF_grid, vsin_obs,
-                                                  sig_vsin_obs, dist_pc,
-                                                  sig_dist_pc,
+                                                  sig_vsin_obs, plx_obs,
+                                                  sig_plx_obs,
                                                   isig, ranges, dims,
                                                   include_rv, model,
                                                   stellar_prior, npy_star,
@@ -304,15 +303,15 @@ def emcee_inference(star, Ndim, ranges, lbdarr, wave, logF, dlogF, minfo,
             sampler = emcee.EnsembleSampler(Nwalk, Ndim, lnprob,
                                             args=[wave, logF, dlogF, minfo,
                                                   listpar, logF_grid, vsin_obs,
-                                                  sig_vsin_obs, dist_pc,
-                                                  sig_dist_pc,
+                                                  sig_vsin_obs, plx_obs,
+                                                  sig_plx_obs,
                                                   isig, ranges, dims,
                                                   include_rv, model,
                                                   stellar_prior, npy_star,
                                                   pdf_mas, pdf_obl, pdf_age,
-                                                  pdf_dis, pdf_ebv,
+                                                  pdf_plx, pdf_ebv,
                                                   grid_mas, grid_obl,
-                                                  grid_age, grid_dis,
+                                                  grid_age, grid_plx,
                                                   grid_ebv],
                                             a=a_parameter, threads=1)
 
@@ -325,14 +324,14 @@ def emcee_inference(star, Ndim, ranges, lbdarr, wave, logF, dlogF, minfo,
 
         if include_rv is True:
             mass_true, obt_true, xc_true,\
-                cos_true, ebv_true, dist_true, rv_true = params_fit
+                cos_true, ebv_true, plx_true, rv_true = params_fit
         else:
             if model == 'befavor':
                 mass_true, obt_true, xc_true,\
-                    cos_true, ebv_true, dist_true = params_fit
+                    cos_true, ebv_true, plx_true = params_fit
             if model == 'aara' or model == 'acol' or model == 'bcmi':
                 mass_true, obt_true, xc_true, n0, Rd, n_true,\
-                    cos_true, ebv_true, dist_true = params_fit
+                    cos_true, ebv_true, plx_true = params_fit
             if model == 'beatlas':
                 mass_true, obt_true, rh0_true, nix_true,\
                     inc_true, dis_true, ebv_true = params_fit
@@ -457,7 +456,7 @@ def emcee_inference(star, Ndim, ranges, lbdarr, wave, logF, dlogF, minfo,
             else:
                 Mstar, oblat, Hfrac = samples[i][0], samples[i][1], 0.3
 
-            t = np.max(np.array([hfrac2tms(Hfrac), 0.]))
+            t = hfrac2tms(Hfrac)
 
             Rpole, logL = geneva_interp_fast(Mstar, oblat, t,
                                              neighbours_only=True,
@@ -594,13 +593,13 @@ def run(input_params):
         grid_mas = np.linspace(3.4, 14.6, 100)
         grid_obl = np.linspace(1.00, 1.45, 100)
         grid_age = np.linspace(0.08, 0.78, 100)
-        grid_dis = np.linspace(0.00, 140, 100)
+        grid_plx = np.linspace(1.00, 10, 100)
         grid_ebv = np.linspace(0.00, 0.10, 100)
 
         pdf_mas = kde_scipy(x=mas, x_grid=grid_mas, bandwidth=0.005)
         pdf_obl = kde_scipy(x=obl, x_grid=grid_obl, bandwidth=0.005)
         pdf_age = kde_scipy(x=age, x_grid=grid_age, bandwidth=0.01)
-        pdf_dis = kde_scipy(x=dis, x_grid=grid_dis, bandwidth=0.01)
+        pdf_plx = kde_scipy(x=plx, x_grid=grid_plx, bandwidth=0.01)
         pdf_ebv = kde_scipy(x=ebv, x_grid=grid_ebv, bandwidth=0.0005)
 
         # plt.plot(grid_mas, pdf_mas)
@@ -612,8 +611,8 @@ def run(input_params):
         # plt.plot(grid_age, pdf_age)
         # plt.hist(age, normed=True)
         # plt.show()
-        # plt.plot(grid_dis, pdf_dis)
-        # plt.hist(dis, normed=True)
+        # plt.plot(grid_plx, pdf_plx)
+        # plt.hist(plx, normed=True)
         # plt.show()
         # plt.plot(grid_ebv, pdf_ebv)
         # plt.hist(ebv, normed=True)
@@ -622,13 +621,13 @@ def run(input_params):
         grid_mas = 0
         grid_obl = 0
         grid_age = 0
-        grid_dis = 0
+        grid_plx = 0
         grid_ebv = 0
 
         pdf_mas = 0
         pdf_obl = 0
         pdf_age = 0
-        pdf_dis = 0
+        pdf_plx = 0
         pdf_ebv = 0
 
     # if model == 'befavor':
@@ -637,7 +636,7 @@ def run(input_params):
     cut_iue_regions = False
 
     if np.size(stars) == 1:
-        ranges, dist_pc, sig_dist_pc, vsin_obs, sig_vsin_obs,\
+        ranges, plx_obs, sig_plx_obs, vsin_obs, sig_vsin_obs,\
             Ndim, band =\
             read_star_info(stars, list_plx, list_sig_plx,
                            list_vsini_obs, list_sig_vsin_obs,
@@ -654,7 +653,7 @@ def run(input_params):
 
         emcee_inference(stars, Ndim, ranges, lbdarr, wave, logF, dlogF,
                         minfo, listpar, logF_grid, vsin_obs, sig_vsin_obs,
-                        dist_pc, sig_dist_pc, isig, dims, include_rv,
+                        plx_obs, sig_plx_obs, isig, dims, include_rv,
                         a_parameter, af_filter, tag, plot_fits, long_process,
                         plot_in_log_scale, model, acrux, pool, Nproc,
                         stellar_prior, npy_star, pdf_mas, pdf_obl, pdf_age,
@@ -664,7 +663,7 @@ def run(input_params):
         for i in range(np.size(stars)):
             star = stars[i]
             star = star.astype('str')
-            ranges, dist_pc, sig_dist_pc, vsin_obs, sig_vsin_obs,\
+            ranges, plx_obs, sig_plx_obs, vsin_obs, sig_vsin_obs,\
                 Ndim, band =\
                 read_star_info(star, list_plx[i], list_sig_plx[i],
                                list_vsini_obs[i], list_sig_vsin_obs[i],
@@ -679,7 +678,7 @@ def run(input_params):
 
             emcee_inference(star, Ndim, ranges, lbdarr, wave, logF,
                             dlogF, minfo, listpar, logF_grid, vsin_obs,
-                            sig_vsin_obs, dist_pc, sig_dist_pc, isig,
+                            sig_vsin_obs, plx_obs, sig_plx_obs, isig,
                             dims, include_rv, a_parameter,
                             af_filter, tag, plot_fits, long_process,
                             plot_in_log_scale, model, acrux, pool, Nproc,
